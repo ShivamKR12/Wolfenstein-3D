@@ -1,0 +1,136 @@
+name: Build Desktop Executables
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - '**.py'
+      - 'Wolfenstein-3D.spec'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-desktop:
+    name: Build for ${{ matrix.os }}
+
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - ubuntu-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller for ${{ matrix.os }}
+        run: |
+          pyinstaller --clean --noconfirm Wolfenstein-3D.spec
+
+      - name: Archive Windows executable
+        if: runner.os == 'Windows'
+        run: |
+          Compress-Archive `
+            -Path dist\Wolfenstein-3D.exe `
+            -DestinationPath Wolfenstein-3D-Windows.zip `
+            -Force
+
+      - name: Archive Linux executable
+        if: runner.os == 'Linux'
+        run: |
+          tar -czf Wolfenstein-3D-Linux.tar.gz -C dist Wolfenstein-3D
+
+      - name: Archive macOS application
+        if: runner.os == 'macOS'
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent dist/Wolfenstein-3D Wolfenstein-3D-macOS.zip
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wolfenstein-3D-${{ runner.os }}
+          path: Wolfenstein-3D-${{ runner.os }}.*
+
+      - name: Rename artifact for release
+        if: runner.os == 'Linux'
+        run: mv Wolfenstein-3D-Linux.tar.gz Wolfenstein-3D-Linux.zip
+
+  release:
+    name: Create GitHub Release
+    needs: build-desktop
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-v1.0.${{ github.run_number }}
+          name: Wolfenstein-3D Desktop v1.0.${{ github.run_number }}
+          body: "Automated desktop release for Windows, Linux, and macOS."
+          files: |
+            artifacts/Wolfenstein-3D-Windows/*.zip
+            artifacts/Wolfenstein-3D-Linux/*.zip
+            artifacts/Wolfenstein-3D-macOS/*.zip
+
+      - name: Setup Butler
+        uses: remarkablegames/setup-butler@v1
+
+      - name: Publish Windows to itch.io via Butler
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          mkdir -p push_win
+          cp artifacts/Wolfenstein-3D-Windows/Wolfenstein-3D-Windows.zip push_win/
+          butler push push_win shivamkr12/wolfenstein-3d:windows --userversion desktop-v1.0.${{ github.run_number }}
+
+      - name: Publish Linux to itch.io via Butler
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          mkdir -p push_linux
+          cp artifacts/Wolfenstein-3D-Linux/Wolfenstein-3D-Linux.zip push_linux/
+          butler push push_linux shivamkr12/wolfenstein-3d:linux --userversion desktop-v1.0.${{ github.run_number }}
+
+      - name: Publish macOS to itch.io via Butler
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          mkdir -p push_mac
+          cp artifacts/Wolfenstein-3D-macOS/Wolfenstein-3D-macOS.zip push_mac/
+          butler push push_mac shivamkr12/wolfenstein-3d:mac --userversion desktop-v1.0.${{ github.run_number }}
