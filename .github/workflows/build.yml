@@ -68,7 +68,7 @@ jobs:
       - name: Archive Linux executable
         if: runner.os == 'Linux'
         run: |
-          tar -czf Wolfenstein-3D-Linux.tar.gz -C dist Wolfenstein-3D
+          cd dist && zip -r ../Wolfenstein-3D-Linux.zip Wolfenstein-3D
 
       - name: Archive macOS application
         if: runner.os == 'macOS'
@@ -80,10 +80,6 @@ jobs:
         with:
           name: Wolfenstein-3D-${{ runner.os }}
           path: Wolfenstein-3D-${{ runner.os }}.*
-
-      - name: Rename artifact for release
-        if: runner.os == 'Linux'
-        run: mv Wolfenstein-3D-Linux.tar.gz Wolfenstein-3D-Linux.zip
 
   release:
     name: Create GitHub Release
